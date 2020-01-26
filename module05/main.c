@@ -11,7 +11,7 @@
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("SourceCodeDeleted");
-MODULE_DESCRIPTION("Simple Hooking Of a Syscall");
+MODULE_DESCRIPTION("Simple Hooking Of a Read Syscall");
 MODULE_VERSION("1.0");
 
 
