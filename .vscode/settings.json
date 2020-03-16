@@ -3,6 +3,10 @@
         "unistd.h": "c",
         "module.h": "c",
         "stdio.h": "c",
-        "stdlib.h": "c"
+        "stdlib.h": "c",
+        "socket.h": "c",
+        "in.h": "c",
+        "audit.h": "c",
+        "net.h": "c"
     }
 }
