@@ -7,6 +7,12 @@
         "socket.h": "c",
         "in.h": "c",
         "audit.h": "c",
-        "net.h": "c"
+        "net.h": "c",
+        "array": "c",
+        "istream": "c",
+        "ostream": "c",
+        "tuple": "c",
+        "type_traits": "c",
+        "utility": "c"
     }
 }

